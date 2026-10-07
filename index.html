@@ -1,0 +1,206 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>OOP National Bank</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+
+  <h1>OOP National Bank</h1>
+
+  <div class="container">
+
+    <!-- 1. Create account -->
+    <div class="box">
+      <h2>1. Create Account</h2>
+
+      <label>Holder Name</label>
+      <input type="text" id="name" placeholder="Enter your name">
+
+      <label>Account Type</label>
+      <select id="type">
+        <option value="SAVINGS">Savings</option>
+        <option value="CURRENT">Current</option>
+      </select>
+
+      <label>Opening Balance (minimum 500)</label>
+      <input type="number" id="openBalance" value="1000">
+
+      <button onclick="createAccount()">Create Account</button>
+    </div>
+
+    <!-- Account number used by all other operations -->
+    <div class="box">
+      <h2>Your Account Number</h2>
+      <input type="number" id="accNo" placeholder="Example: 10001">
+    </div>
+
+    <div class="row">
+      <!-- 2. Deposit and Withdraw -->
+      <div class="box">
+        <h2>2. Deposit / Withdraw</h2>
+        <label>Amount</label>
+        <input type="number" id="amount" placeholder="Enter amount">
+        <button class="green" onclick="deposit()">Deposit</button>
+        <button class="red" onclick="withdraw()">Withdraw</button>
+        <p>Daily withdrawal limit: 20000</p>
+      </div>
+
+      <!-- 3. Balance and Info -->
+      <div class="box">
+        <h2>3. Balance / Information</h2>
+        <button onclick="checkBalance()">Check Balance</button>
+        <button onclick="showInfo()">Account Information</button>
+      </div>
+    </div>
+
+    <!-- 4. Passbook -->
+    <div class="box">
+      <h2>4. Passbook</h2>
+      <label>From Date</label>
+      <input type="date" id="fromDate">
+      <label>To Date</label>
+      <input type="date" id="toDate">
+      <button onclick="showPassbook()">Show Passbook</button>
+      <button onclick="window.print()">Print</button>
+    </div>
+
+    <!-- Result of Account Info and Passbook appears here -->
+    <div class="box" id="result" style="display:none"></div>
+
+  </div>
+
+  <script>
+    // ---------- helper functions ----------
+
+    // get the value typed in a text box
+    function getValue(id) {
+      return document.getElementById(id).value;
+    }
+
+    // show a message in a pop-up alert box
+    function showMessage(text, type) {
+      alert(text);
+    }
+
+    // send a request to the Java server, then call the given function with the reply
+    function callJava(url, whatToDo) {
+      fetch(url)
+        .then(function (response) {
+          return response.json();
+        })
+        .then(function (data) {
+          whatToDo(data);
+        })
+        .catch(function () {
+          showMessage("Cannot reach the Java server. Open http://localhost:8080 and make sure Java is running.", "error");
+        });
+    }
+
+    // show the reply message from Java in an alert box
+    function showReply(data) {
+      alert(data.message);
+    }
+
+    // ---------- the operations ----------
+
+    function createAccount() {
+      var url = "/api/create?name=" + encodeURIComponent(getValue("name")) +
+                "&type=" + getValue("type") +
+                "&balance=" + getValue("openBalance");
+
+      callJava(url, function (data) {
+        showReply(data);
+        if (data.ok) {
+          // last word of the message is the new account number
+          var words = data.message.split(" ");
+          document.getElementById("accNo").value = words[words.length - 1];
+        }
+      });
+    }
+
+    function deposit() {
+      var url = "/api/deposit?acc=" + getValue("accNo") + "&amount=" + getValue("amount");
+      callJava(url, showReply);
+    }
+
+    function withdraw() {
+      var url = "/api/withdraw?acc=" + getValue("accNo") + "&amount=" + getValue("amount");
+      callJava(url, showReply);
+    }
+
+    function checkBalance() {
+      callJava("/api/balance?acc=" + getValue("accNo"), showReply);
+    }
+
+    function showInfo() {
+      callJava("/api/info?acc=" + getValue("accNo"), function (data) {
+        var result = document.getElementById("result");
+        if (data.ok == false) {
+          showReply(data);
+          result.style.display = "none";
+          return;
+        }
+        result.innerHTML =
+          "<h2>Account Information</h2>" +
+          "<p>Account Number: " + data.accountNumber + "</p>" +
+          "<p>Holder Name: " + data.name + "</p>" +
+          "<p>Account Type: " + data.type + "</p>" +
+          "<p>Balance: " + data.balance + "</p>" +
+          "<p>Daily Limit: " + data.dailyLimit + "</p>" +
+          "<p>Withdrawn Today: " + data.withdrawnToday + "</p>";
+        result.style.display = "block";
+      });
+    }
+
+    function showPassbook() {
+      var url = "/api/passbook?acc=" + getValue("accNo") +
+                "&from=" + getValue("fromDate") +
+                "&to=" + getValue("toDate");
+
+      callJava(url, function (data) {
+        var result = document.getElementById("result");
+        if (data.ok == false) {
+          showReply(data);
+          result.style.display = "none";
+          return;
+        }
+
+        var html = "<h2>Passbook of " + data.name + "</h2>";
+        html += "<table>";
+        html += "<tr><th>Txn ID</th><th>Date</th><th>Type</th><th>Amount</th><th>Balance</th></tr>";
+
+        // add one table row for every transaction
+        for (var i = 0; i < data.transactions.length; i++) {
+          var t = data.transactions[i];
+          html += "<tr>";
+          html += "<td>" + t.id + "</td>";
+          html += "<td>" + t.date + "</td>";
+          html += "<td>" + t.type + "</td>";
+          html += "<td>" + t.amount + "</td>";
+          html += "<td>" + t.balance + "</td>";
+          html += "</tr>";
+        }
+        if (data.transactions.length == 0) {
+          html += "<tr><td colspan='5'>No transactions found</td></tr>";
+        }
+
+        html += "</table>";
+        html += "<p>Current Balance: " + data.balance + "</p>";
+        result.innerHTML = html;
+        result.style.display = "block";
+      });
+    }
+
+    // ---------- set default dates (last 30 days) ----------
+    var today = new Date();
+    var oldDate = new Date();
+    oldDate.setDate(today.getDate() - 30);
+    document.getElementById("toDate").value = today.toISOString().substring(0, 10);
+    document.getElementById("fromDate").value = oldDate.toISOString().substring(0, 10);
+  </script>
+
+</body>
+</html>
